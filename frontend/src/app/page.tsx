@@ -5,19 +5,12 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { useState } from "react"
 import { AlertTriangle, CheckCircle } from "lucide-react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { usePredictTweet } from "./api/api"
 
-export default function Home() {
+function Home() {
   const [tweet, setTweet] = useState("")
-  const [result, setResult] = useState<"emergency" | "safe" | null>(null)
-
-  const handleCheck = async () => {
-    // Fake classify
-    if (tweet.toLowerCase().includes("help")) {
-      setResult("emergency")
-    } else {
-      setResult("safe")
-    }
-  }
+  const { mutate, data } = usePredictTweet()
 
   return (
     <main className="flex flex-col items-center gap-6 p-10">
@@ -33,27 +26,40 @@ export default function Home() {
         className="max-w-xl"
       />
 
-      <Button onClick={handleCheck} className="w-40">Check Emergency</Button>
+      <Button onClick={() => {
+        mutate({ tweet })
+      }} className="w-40">Check Emergency</Button>
 
-      {result && (
-        <Card className={`max-w-md mt-6 border-2 ${result === "emergency" ? "border-red-400" : "border-green-400"}`}>
+      {data && (
+        <Card className={`max-w-md mt-6 border-2 ${data.is_real_disaster ? "border-red-400" : "border-green-400"}`}>
           <CardHeader className="flex items-center gap-2">
-            {result === "emergency" ? (
+            {data.is_real_disaster ? (
               <AlertTriangle className="text-red-500" />
             ) : (
               <CheckCircle className="text-green-500" />
             )}
             <h2 className="text-xl font-semibold">
-              {result === "emergency" ? "🚨 Emergency Detected" : "✅ Safe"}
+              {data.is_real_disaster ? "🚨 Emergency Detected" : "✅ Safe"}
             </h2>
           </CardHeader>
           <CardContent>
-            {result === "emergency"
+            {data.is_real_disaster
               ? "This tweet looks like it might describe an emergency situation."
               : "This tweet does not appear to be an emergency."}
           </CardContent>
         </Card>
       )}
     </main>
+  )
+}
+
+
+const queryClient = new QueryClient()
+
+export default function HomeWithContext() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Home />
+    </QueryClientProvider>
   )
 }
