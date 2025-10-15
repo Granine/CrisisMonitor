@@ -1,18 +1,25 @@
-name: Build and Deploy to Netlify
+name: Deploy Frontend to Netlify
 
 on:
   push:
     branches:
       - main
-  pull_request:
+    paths:
+      - 'frontend/**'      # only trigger when something inside frontend changes
+      - '.github/workflows/deploy_fe.yml' # (optional) trigger if workflow itself changes
+  workflow_dispatch:        # allows manual runs too
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    defaults:
+      run:
+        working-directory: ./frontend   # all commands run inside frontend folder
 
-      # Build your site here (e.g. install + build)
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -24,13 +31,13 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Deploy to Netlify
-        uses: nwtgck/actions-netlify@v3.0
-        with:
-          publish-dir: "./dist"
-          production-branch: main
-          deploy-message: "Deploy via GitHub Actions"
-        env:
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      - name: Install Netlify CLI
+        run: npm install -g netlify-cli
 
+      - name: Deploy to Netlify
+        run: |
+          netlify deploy \
+            --site ${{ secrets.NETLIFY_SITE_ID }} \
+            --auth ${{ secrets.NETLIFY_AUTH_TOKEN }} \
+            --prod \
+            --dir ./dist   # Adjust based on your frontend build output
