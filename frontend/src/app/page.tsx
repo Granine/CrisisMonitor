@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardHeader, CardContent } from "@/components/ui/card"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { AlertTriangle, CheckCircle } from "lucide-react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { usePredictTweet } from "./api/api"
