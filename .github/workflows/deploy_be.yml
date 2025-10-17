@@ -10,7 +10,7 @@ on:
   workflow_dispatch:        # allows manual runs too
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: us-east-2
   INSTANCE_NAME: disaster-classify-web
   IMAGE_NAME: viriyadhika/disaster-classification-mscac:latest
   SECURITY_GROUP: disaster-classify-sg
