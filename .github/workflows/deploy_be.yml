@@ -2,8 +2,12 @@ name: Full EC2 Deployment (Auto-create + Deploy)
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches:
+      - main
+    paths:
+      - 'backend/**'      # only trigger when something inside frontend changes
+      - '.github/workflows/deploy_be.yml' # (optional) trigger if workflow itself changes
+  workflow_dispatch:        # allows manual runs too
 
 env:
   AWS_REGION: us-east-1
