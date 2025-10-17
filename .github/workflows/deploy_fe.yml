@@ -39,5 +39,4 @@ jobs:
           netlify deploy \
             --site ${{ secrets.NETLIFY_SITE_ID }} \
             --auth ${{ secrets.NETLIFY_AUTH_TOKEN }} \
-            --prod \
-            --dir ./dist   # Adjust based on your frontend build output
+            --prod
