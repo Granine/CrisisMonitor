@@ -1,26 +1,31 @@
-name: deploy_be
+name: Ephemeral EKS
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      keep_minutes:
+        description: "Minutes to keep the cluster alive"
+        default: "30"
+        required: true
   push:
-    branches:
-      - main
+    branches: [ main ]
     paths:
-      - 'backend/**' 
+      - 'backend/**'
       - 'model/**'
+      - 'k8s/**'
       - '.github/workflows/deploy_be.yml'
 
 env:
   CLUSTER_NAME: mlapp-demo
   NAMESPACE: mlapp
-  AWS_REGION: ${{ secrets.AWS_REGION}}
+  AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-  ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+  ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
 
 jobs:
-  delpoy:
+  deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 60   
+    timeout-minutes: 60
 
     steps:
     - name: Checkout
@@ -58,11 +63,13 @@ jobs:
           --region "${AWS_REGION}" \
           --force
 
-    - name: Create namespace + StorageClass (gp3, default)
+    - name: Create namespace
+      run: kubectl apply -f k8s/00-namespace.yaml
+
+    - name: Ensure gp3 is default StorageClass
       run: |
-        # Namespace
-        kubectl apply -f k8s/00-namespace.yaml
-        # Ensure gp3 is default; keep standard Delete policy (we'll snapshot before teardown)
+        # If gp3 exists, make it default (idempotent)
+        kubectl annotate sc gp3 storageclass.kubernetes.io/is-default-class=true --overwrite || true
         kubectl get storageclass
 
     - name: Log in to ECR
@@ -70,13 +77,20 @@ jobs:
         aws ecr get-login-password --region "${AWS_REGION}" \
           | docker login --username AWS --password-stdin "${ECR_URI}"
 
+    - name: Ensure ECR repos exist
+      run: |
+        for repo in backend model; do
+          aws ecr describe-repositories --repository-names "$repo" >/dev/null 2>&1 \
+          || aws ecr create-repository --repository-name "$repo" >/dev/null
+        done
+
     - name: Build & push images (linux/amd64)
       run: |
         docker buildx create --use --name xbuilder || true
         docker buildx build --platform linux/amd64 -t "${ECR_URI}/backend:latest" ./backend --push
         docker buildx build --platform linux/amd64 -t "${ECR_URI}/model:latest"   ./model   --push
 
-    - name: Patch image URIs in manifests (temp)
+    - name: Patch image URIs in manifests
       run: |
         sed -i "s~IMAGE_ECR_URI_MODEL~${ECR_URI}/model:latest~g" k8s/10-model-deployment.yaml
         sed -i "s~IMAGE_ECR_URI_BACKEND~${ECR_URI}/backend:latest~g" k8s/20-backend-deployment.yaml
@@ -89,12 +103,11 @@ jobs:
         MONGO_ROOT_USERNAME: ${{ secrets.MONGO_ROOT_USERNAME }}
         MONGO_ROOT_PASSWORD: ${{ secrets.MONGO_ROOT_PASSWORD }}
       run: |
-        # URL-encode password safely for connection string
         enc_pw=$(python3 - <<'PY'
-import urllib.parse, os
-print(urllib.parse.quote(os.environ["MONGO_ROOT_PASSWORD"], safe=""))
-PY
-)
+        import urllib.parse, os
+        print(urllib.parse.quote(os.environ["MONGO_ROOT_PASSWORD"], safe=""))
+        PY
+        )
         MONGO_URI="mongodb://${MONGO_ROOT_USERNAME}:${enc_pw}@mongodb-0.mongodb-svc.${NAMESPACE}.svc.cluster.local:27017/?authSource=admin"
 
         kubectl -n "${NAMESPACE}" create secret generic app-secrets \
@@ -116,7 +129,7 @@ PY
         kubectl apply -n "${NAMESPACE}" -f k8s/20-backend-deployment.yaml
         kubectl apply -n "${NAMESPACE}" -f k8s/21-backend-service.yaml
 
-    - name: Wait and test
+    - name: Wait & quick test (port-forward)
       run: |
         kubectl -n "${NAMESPACE}" rollout status deploy/model   --timeout=180s
         kubectl -n "${NAMESPACE}" rollout status deploy/backend --timeout=180s
@@ -127,10 +140,10 @@ PY
         curl -fsS -X POST http://localhost:8000/classify -H 'Content-Type: application/json' -d '{"text":"hello world"}' || true
         kill $PF_PID || true
 
-    - name: Keep cluster alive for 30 minutes (demo window)
+    - name: Demo window
       run: |
-        echo "Cluster is up. Auto-cleanup in 30 minutes..."
-        sleep 1800
+        echo "Cluster is up. Auto-cleanup in ${{ github.event.inputs.keep_minutes || 30 }} minutes..."
+        sleep $(( ( ${{ github.event.inputs.keep_minutes || 30 }} ) * 60 ))
 
     - name: Snapshot Mongo EBS volume (preserve data)
       if: always()
