@@ -39,11 +39,22 @@ jobs:
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Install kubectl & eksctl
+      shell: bash
       run: |
-        curl -sLo kubectl "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        # Install kubectl
+        K8S_VER=$(curl -L -s https://dl.k8s.io/release/stable.txt)
+        curl -L -o kubectl "https://dl.k8s.io/release/${K8S_VER}/bin/linux/amd64/kubectl"
         chmod +x kubectl && sudo mv kubectl /usr/local/bin/
-        curl -sL "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" \
-          | tar xz -C /tmp && sudo mv /tmp/eksctl /usr/local/bin/
+
+        # Install eksctl (use stable release, not "latest")
+        EKSCTL_VER=$(curl -s https://api.github.com/repos/eksctl-io/eksctl/releases/latest | grep tag_name | cut -d '"' -f4)
+        curl -L "https://github.com/eksctl-io/eksctl/releases/download/${EKSCTL_VER}/eksctl_Linux_amd64.tar.gz" \
+          -o /tmp/eksctl.tar.gz
+        tar -xzf /tmp/eksctl.tar.gz -C /tmp
+        sudo mv /tmp/eksctl /usr/local/bin/
+        eksctl version
+        kubectl version --client
+
 
     - name: Create EKS cluster (small + OIDC)
       run: |
