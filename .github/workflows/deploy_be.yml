@@ -1,0 +1,148 @@
+name: deploy_be
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**' 
+      - 'model/**'
+      - '.github/workflows/deploy_be.yml'
+
+env:
+  CLUSTER_NAME: mlapp-demo
+  NAMESPACE: mlapp
+  AWS_REGION: ${{ secrets.AWS_REGION}}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+
+jobs:
+  delpoy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60   
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Install kubectl & eksctl
+      run: |
+        curl -sLo kubectl "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+        curl -sL "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz" \
+          | tar xz -C /tmp && sudo mv /tmp/eksctl /usr/local/bin/
+
+    - name: Create EKS cluster (small + OIDC)
+      run: |
+        eksctl create cluster \
+          --name "${CLUSTER_NAME}" \
+          --region "${AWS_REGION}" \
+          --nodes 1 \
+          --node-type t3.small \
+          --with-oidc \
+          --timeout 30m
+
+    - name: Install EBS CSI addon
+      run: |
+        eksctl create addon \
+          --name aws-ebs-csi-driver \
+          --cluster "${CLUSTER_NAME}" \
+          --region "${AWS_REGION}" \
+          --force
+
+    - name: Create namespace + StorageClass (gp3, default)
+      run: |
+        # Namespace
+        kubectl apply -f k8s/00-namespace.yaml
+        # Ensure gp3 is default; keep standard Delete policy (we'll snapshot before teardown)
+        kubectl get storageclass
+
+    - name: Log in to ECR
+      run: |
+        aws ecr get-login-password --region "${AWS_REGION}" \
+          | docker login --username AWS --password-stdin "${ECR_URI}"
+
+    - name: Build & push images (linux/amd64)
+      run: |
+        docker buildx create --use --name xbuilder || true
+        docker buildx build --platform linux/amd64 -t "${ECR_URI}/backend:latest" ./backend --push
+        docker buildx build --platform linux/amd64 -t "${ECR_URI}/model:latest"   ./model   --push
+
+    - name: Patch image URIs in manifests (temp)
+      run: |
+        sed -i "s~IMAGE_ECR_URI_MODEL~${ECR_URI}/model:latest~g" k8s/10-model-deployment.yaml
+        sed -i "s~IMAGE_ECR_URI_BACKEND~${ECR_URI}/backend:latest~g" k8s/20-backend-deployment.yaml
+
+    - name: Create ConfigMap
+      run: kubectl apply -f k8s/01-configmap.yaml
+
+    - name: Create Secret from GitHub secrets
+      env:
+        MONGO_ROOT_USERNAME: ${{ secrets.MONGO_ROOT_USERNAME }}
+        MONGO_ROOT_PASSWORD: ${{ secrets.MONGO_ROOT_PASSWORD }}
+      run: |
+        # URL-encode password safely for connection string
+        enc_pw=$(python3 - <<'PY'
+import urllib.parse, os
+print(urllib.parse.quote(os.environ["MONGO_ROOT_PASSWORD"], safe=""))
+PY
+)
+        MONGO_URI="mongodb://${MONGO_ROOT_USERNAME}:${enc_pw}@mongodb-0.mongodb-svc.${NAMESPACE}.svc.cluster.local:27017/?authSource=admin"
+
+        kubectl -n "${NAMESPACE}" create secret generic app-secrets \
+          --from-literal=MONGO_ROOT_USERNAME="${MONGO_ROOT_USERNAME}" \
+          --from-literal=MONGO_ROOT_PASSWORD="${MONGO_ROOT_PASSWORD}" \
+          --from-literal=MONGO_URI="${MONGO_URI}" \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Deploy MongoDB (StatefulSet + Service)
+      run: |
+        kubectl apply -n "${NAMESPACE}" -f k8s/30-mongodb-statefulset.yaml
+        kubectl apply -n "${NAMESPACE}" -f k8s/31-mongodb-service.yaml
+        kubectl -n "${NAMESPACE}" rollout status statefulset/mongodb --timeout=300s
+
+    - name: Deploy model + backend
+      run: |
+        kubectl apply -n "${NAMESPACE}" -f k8s/10-model-deployment.yaml
+        kubectl apply -n "${NAMESPACE}" -f k8s/11-model-service.yaml
+        kubectl apply -n "${NAMESPACE}" -f k8s/20-backend-deployment.yaml
+        kubectl apply -n "${NAMESPACE}" -f k8s/21-backend-service.yaml
+
+    - name: Wait and test
+      run: |
+        kubectl -n "${NAMESPACE}" rollout status deploy/model   --timeout=180s
+        kubectl -n "${NAMESPACE}" rollout status deploy/backend --timeout=180s
+        kubectl -n "${NAMESPACE}" port-forward svc/backend-svc 8000:80 &
+        PF_PID=$!
+        sleep 8
+        curl -fsS http://localhost:8000/health
+        curl -fsS -X POST http://localhost:8000/classify -H 'Content-Type: application/json' -d '{"text":"hello world"}' || true
+        kill $PF_PID || true
+
+    - name: Keep cluster alive for 30 minutes (demo window)
+      run: |
+        echo "Cluster is up. Auto-cleanup in 30 minutes..."
+        sleep 1800
+
+    - name: Snapshot Mongo EBS volume (preserve data)
+      if: always()
+      run: |
+        PVC="mongo-data-mongodb-0"
+        PV=$(kubectl -n "${NAMESPACE}" get pvc "${PVC}" -o jsonpath='{.spec.volumeName}')
+        VOL=$(kubectl get pv "${PV}" -o jsonpath='{.spec.csi.volumeHandle}')
+        echo "Snapshotting EBS volume ${VOL} for ${PVC}"
+        aws ec2 create-snapshot --volume-id "${VOL}" \
+          --description "mlapp-mongo-snap-$(date +%F-%H%M%S)" >/dev/null
+        echo "Snapshot requested."
+
+    - name: Tear down cluster (stop all costs)
+      if: always()
+      run: eksctl delete cluster --name "${CLUSTER_NAME}" --region "${AWS_REGION}"
