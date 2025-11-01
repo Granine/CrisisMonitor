@@ -11,9 +11,7 @@ RUN python -m pip install --upgrade pip setuptools wheel
 COPY requirements.txt .
 
 
-RUN pip install --no-cache-dir "numpy<2" \
- && pip install --no-cache-dir onnxruntime==1.17.1 \
- && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
  COPY app.py .
 
