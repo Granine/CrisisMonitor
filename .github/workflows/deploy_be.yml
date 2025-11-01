@@ -32,9 +32,6 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Debug env
-      run: echo "${{ env.ECR_URI }}" | od -c
-
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -80,7 +77,10 @@ jobs:
           --force
 
     - name: Create namespace
-      run: kubectl apply -f k8s/00-namespace.yaml
+      run: |
+        kubectl apply -f k8s/00-namespace.yaml
+        kubectl get storageclass
+
 
 
     - name: Ensure gp3 storage class exists and is default
@@ -169,21 +169,22 @@ jobs:
         kubectl apply -n "${NAMESPACE}" -f k8s/20-backend-deployment.yaml
         kubectl apply -n "${NAMESPACE}" -f k8s/21-backend-service.yaml
 
-    - name: Wait & quick test (port-forward)
+    - name: Wait and test
       run: |
-        kubectl -n "${NAMESPACE}" rollout status deploy/model   --timeout=180s
-        kubectl -n "${NAMESPACE}" rollout status deploy/backend --timeout=180s
+        kubectl -n "${NAMESPACE}" rollout status deploy/model   --timeout=650s
+        kubectl -n "${NAMESPACE}" rollout status deploy/backend --timeout=350s
         kubectl -n "${NAMESPACE}" port-forward svc/backend-svc 8000:80 &
         PF_PID=$!
         sleep 8
         curl -fsS http://localhost:8000/health
-        curl -fsS -X POST http://localhost:8000/classify -H 'Content-Type: application/json' -d '{"text":"hello world"}' || true
+        curl -fsS -X POST http://localhost:8000/classify -H 'Content-Type: application/json' -d '{"text":"hello my house burned down!! help"}' || true
         kill $PF_PID || true
+
 
     - name: Demo window
       run: |
         echo "Cluster is up. Auto-cleanup in ${{ github.event.inputs.keep_minutes || 30 }} minutes..."
-        sleep $(( ( ${{ github.event.inputs.keep_minutes || 30 }} ) * 60 ))
+        sleep "$(( ${{ github.event.inputs.keep_minutes }} * 60 ))"
 
     - name: Snapshot Mongo EBS volume (preserve data)
       if: always()
