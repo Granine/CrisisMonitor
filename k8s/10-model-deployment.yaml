@@ -22,11 +22,6 @@ spec:
               secretKeyRef:
                 name: model-config
                 key: ONNX_URL
-          - name: TOKENIZER_ID
-            valueFrom:
-              secretKeyRef:
-                name: model-config
-                key: TOKENIZER_ID
         readinessProbe:
           httpGet:
             path: /ready
