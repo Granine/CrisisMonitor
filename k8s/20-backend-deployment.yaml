@@ -13,6 +13,10 @@ spec:
       labels:
         app: backend
     spec:
+      tolerations:
+        - key: "node.kubernetes.io/memory-pressure"
+          operator: "Exists"
+          effect: "NoSchedule"
       containers:
         - name: backend
           image: IMAGE_ECR_URI_BACKEND
@@ -23,5 +27,5 @@ spec:
           ports:
             - containerPort: 8000
           resources:
-            requests: { cpu: "100m", memory: "256Mi" }
-            limits:   { cpu: "500m", memory: "512Mi" }
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "300m", memory: "512Mi" }
