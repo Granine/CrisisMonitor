@@ -162,6 +162,21 @@ jobs:
         kubectl apply -n "${NAMESPACE}" -f k8s/31-mongodb-service.yaml
         kubectl -n "${NAMESPACE}" rollout status statefulset/mongodb --timeout=300s
 
+    - name: Create presigned URL for model.onnx and store as K8s secret
+      env:
+        S3_BUCKET: ${{ secrets.S3_BUCKET }}
+        S3_KEY: ${{ secrets.S3_KEY }}
+      run: |
+        echo "Creating presigned URL for model file..."
+        URL=$(aws s3 presign "s3://${S3_BUCKET}/${S3_KEY}" --expires-in 3600)
+        echo "Presigned URL generated for ${S3_BUCKET}/${S3_KEY}"
+
+        kubectl -n "${NAMESPACE}" delete secret model-config --ignore-not-found
+        kubectl -n "${NAMESPACE}" create secret generic model-config \
+          --from-literal=ONNX_URL="${URL}"
+
+
+
     - name: Deploy model + backend
       run: |
         kubectl apply -n "${NAMESPACE}" -f k8s/10-model-deployment.yaml

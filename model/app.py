@@ -1,19 +1,16 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-import os, time, tempfile, json, math
-import requests
-import onnxruntime as ort
+import os, json, tempfile, requests, onnxruntime as ort
 import numpy as np
-
 from transformers import AutoTokenizer
+import onnx
 
 class InPayload(BaseModel):
     text: str
 
 app = FastAPI()
 
-# Globals for readiness
 SESSION = None
 READY = False
 ERROR = None
@@ -26,8 +23,21 @@ def download_model(url: str, dst_path: str):
                 if chunk:
                     f.write(chunk)
 
+def extract_model_metadata(onnx_path: str):
+    """Try to read the original model id from ONNX metadata."""
+    try:
+        model = onnx.load(onnx_path)
+        meta = {p.key: p.value for p in model.metadata_props}
+        # Common keys:
+        #   "model_type": "distilbert"
+        #   "hf_pretrained_model_name_or_path": "distilbert-base-uncased"
+        model_id = meta.get("hf_pretrained_model_name_or_path") or meta.get("model_type")
+        return model_id
+    except Exception as e:
+        print(f"⚠️ Could not read ONNX metadata: {e}")
+        return None
+
 def build_inputs(tokenizer, text: str, session: ort.InferenceSession):
-    # Tokenize to NumPy for ONNX Runtime
     enc = tokenizer(
         text,
         return_tensors="np",
@@ -35,30 +45,17 @@ def build_inputs(tokenizer, text: str, session: ort.InferenceSession):
         padding="max_length",
         max_length=128,
     )
-    # Map tokenizer outputs to ONNX input names (commonly: input_ids, attention_mask)
     feed = {}
     sess_inputs = [i.name for i in session.get_inputs()]
     for k, v in enc.items():
         if k in sess_inputs:
             feed[k] = v
-    # Some models expect token_type_ids even if all zeros
     if "token_type_ids" in sess_inputs and "token_type_ids" not in feed:
         feed["token_type_ids"] = np.zeros_like(enc["input_ids"])
     return feed
 
 def postprocess(outputs):
-    # Assume a classifier with logits [1, num_labels]
-    # Interpret label 1 as "True"
-    logits = None
-    if isinstance(outputs, list):
-        logits = outputs[0]
-    elif isinstance(outputs, dict):
-        # If model returns named outputs
-        logits = list(outputs.values())[0]
-    else:
-        raise RuntimeError("Unexpected ONNX outputs")
-
-    # Softmax & argmax
+    logits = outputs[0] if isinstance(outputs, list) else list(outputs.values())[0]
     probs = np.exp(logits - logits.max(axis=-1, keepdims=True))
     probs = probs / probs.sum(axis=-1, keepdims=True)
     pred = int(np.argmax(probs, axis=-1).item())
@@ -91,29 +88,36 @@ def _load_on_start():
     global SESSION, READY, ERROR
     try:
         onnx_url = os.environ.get("ONNX_URL")
-        tokenizer_id = os.environ.get("TOKENIZER_ID", "distilbert-base-uncased")
         if not onnx_url:
             raise RuntimeError("ONNX_URL not provided")
 
         os.makedirs("/models", exist_ok=True)
         model_path = "/models/model.onnx"
-        # Download only if not present
-        if not os.path.exists(model_path):
-            download_model(onnx_url, model_path)
 
-        # Create session
+        if not os.path.exists(model_path):
+            print(f"📥 Downloading model from {onnx_url}")
+            download_model(onnx_url, model_path)
+            print("✅ Model downloaded")
+
         providers = ort.get_available_providers()
         SESSION = ort.InferenceSession(model_path, providers=providers)
 
-        # Tokenizer (downloads vocab once; cached in /root/.cache/huggingface by default)
-        app.state.tokenizer = AutoTokenizer.from_pretrained(tokenizer_id)
+        # --- 🔍 Auto-detect tokenizer from ONNX metadata
+        model_id = extract_model_metadata(model_path)
+        if not model_id:
+            print("⚠️ No model id found in metadata, defaulting to 'distilbert-base-uncased'")
+            model_id = "distilbert-base-uncased"
+
+        print(f"🧩 Loading tokenizer: {model_id}")
+        app.state.tokenizer = AutoTokenizer.from_pretrained(model_id)
 
         READY = True
+        print("✅ Model and tokenizer ready")
     except Exception as e:
         ERROR = e
         READY = False
+        print(f"❌ Model load failed: {e}")
 
-# Load asynchronously after startup so container can come up quickly
 @app.on_event("startup")
 def _startup():
     _load_on_start()
