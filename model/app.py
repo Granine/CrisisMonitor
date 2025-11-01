@@ -14,7 +14,7 @@ app = FastAPI()
 SESSION = None
 READY = False
 ERROR = None
-# tttt
+# ttttt
 
 def download_model(url: str, dst_path: str):
     with requests.get(url, stream=True, timeout=60) as r:
