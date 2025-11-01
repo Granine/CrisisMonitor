@@ -58,22 +58,15 @@ jobs:
         kubectl version --client
 
 
-    - name: Create EKS cluster (medium + OIDC)
+    - name: Create EKS cluster (small + OIDC)
       run: |
         eksctl create cluster \
           --name "${CLUSTER_NAME}" \
           --region "${AWS_REGION}" \
-          --zones us-east-1a,us-east-1b \
           --nodes 1 \
-          --nodes-min 1 \
-          --nodes-max 2 \
-          --node-type t3.medium \
-          --managed \
+          --node-type t3.small \
           --with-oidc \
-          --timeout 40m
-
-
-
+          --timeout 30m
 
     - name: Install EBS CSI addon
       run: |
