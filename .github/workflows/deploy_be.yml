@@ -43,19 +43,22 @@ jobs:
     - name: Install kubectl & eksctl
       shell: bash
       run: |
+        set -euxo pipefail
         # Install kubectl
         K8S_VER=$(curl -L -s https://dl.k8s.io/release/stable.txt)
         curl -L -o kubectl "https://dl.k8s.io/release/${K8S_VER}/bin/linux/amd64/kubectl"
         chmod +x kubectl && sudo mv kubectl /usr/local/bin/
 
-        # Install eksctl (use stable release, not "latest")
-        EKSCTL_VER=$(curl -s https://api.github.com/repos/eksctl-io/eksctl/releases/latest | grep tag_name | cut -d '"' -f4)
+        # Install eksctl (fallback if GitHub API rate-limited)
+        EKSCTL_VER=$(curl -s https://api.github.com/repos/eksctl-io/eksctl/releases/latest | grep tag_name | cut -d '"' -f4 || echo "v0.215.0")
+        echo "Installing eksctl version ${EKSCTL_VER}"
         curl -L "https://github.com/eksctl-io/eksctl/releases/download/${EKSCTL_VER}/eksctl_Linux_amd64.tar.gz" \
           -o /tmp/eksctl.tar.gz
-        tar -xzf /tmp/eksctl.tar.gz -C /tmp
+        tar -xzf /tmp/eksctl.tar.gz -C /tmp || (echo "tar failed, check archive" && ls -lh /tmp && exit 1)
         sudo mv /tmp/eksctl /usr/local/bin/
         eksctl version
         kubectl version --client
+
 
 
     - name: Create EKS cluster (small + OIDC)
