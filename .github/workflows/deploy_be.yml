@@ -189,7 +189,7 @@ jobs:
 
     - name: Wait and test
       run: |
-        kubectl -n "${NAMESPACE}" rollout status deploy/model   --timeout=650s
+        kubectl -n "${NAMESPACE}" rollout status deploy/model   --timeout=1000s
         kubectl -n "${NAMESPACE}" rollout status deploy/backend --timeout=350s
         kubectl -n "${NAMESPACE}" port-forward svc/backend-svc 8000:80 &
         PF_PID=$!

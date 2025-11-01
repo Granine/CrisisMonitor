@@ -31,10 +31,10 @@ spec:
           httpGet:
             path: /ready
             port: 8000
-          initialDelaySeconds: 0
-          periodSeconds: 5
+          initialDelaySeconds: 100
+          periodSeconds: 15
           timeoutSeconds: 2
-          failureThreshold: 60   
+          failureThreshold: 120
         livenessProbe:
           httpGet:
             path: /health
@@ -44,7 +44,7 @@ spec:
         resources:
           requests:
             cpu: 100m
-            memory: 256Mi
+            memory: 500Mi
           limits:
             cpu: 300m
-            memory: 600Mi
+            memory: 1Gi
