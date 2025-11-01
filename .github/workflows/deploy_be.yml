@@ -63,13 +63,17 @@ jobs:
         eksctl create cluster \
           --name "${CLUSTER_NAME}" \
           --region "${AWS_REGION}" \
-          --with-oidc \
-          --node-type t3.medium \
           --nodes 1 \
           --nodes-min 1 \
           --nodes-max 3 \
+          --node-type t3.medium \
           --managed \
+          --with-oidc \
+          --auto-mode-config-enabled=false \
+          --zones us-east-1a,us-east-1b \
           --timeout 40m
+
+
 
 
     - name: Install EBS CSI addon
