@@ -22,6 +22,7 @@ env:
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
   ECR_URI: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
 
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -30,6 +31,10 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+
+    - name: Debug env
+      run: echo "${{ env.ECR_URI }}" | od -c
+
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -77,11 +82,35 @@ jobs:
     - name: Create namespace
       run: kubectl apply -f k8s/00-namespace.yaml
 
-    - name: Ensure gp3 is default StorageClass
+
+    - name: Ensure gp3 storage class exists and is default
+      shell: bash
       run: |
-        # If gp3 exists, make it default (idempotent)
-        kubectl annotate sc gp3 storageclass.kubernetes.io/is-default-class=true --overwrite || true
+        # Check if gp3 already exists
+        if ! kubectl get storageclass gp3 >/dev/null 2>&1; then
+          echo "Creating gp3 storage class..."
+          cat <<EOF | kubectl apply -f -
+        apiVersion: storage.k8s.io/v1
+        kind: StorageClass
+        metadata:
+          name: gp3
+          annotations:
+            storageclass.kubernetes.io/is-default-class: "true"
+        provisioner: ebs.csi.aws.com
+        volumeBindingMode: WaitForFirstConsumer
+        allowVolumeExpansion: true
+        parameters:
+          type: gp3
+          fsType: ext4
+        EOF
+        else
+          echo "gp3 exists, marking as default..."
+          kubectl annotate sc gp3 storageclass.kubernetes.io/is-default-class=true --overwrite
+        fi
+
+        echo "Available storage classes:"
         kubectl get storageclass
+
 
     - name: Log in to ECR
       run: |
