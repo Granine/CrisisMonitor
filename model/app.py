@@ -38,7 +38,7 @@ def predict(payload: InPayload):
 
 @app.on_event("startup")
 def _startup():
-    global SESSION
+    global SESSION, ERROR
     try:
         SESSION = start()
     except Exception as ex:
