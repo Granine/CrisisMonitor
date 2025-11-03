@@ -21,9 +21,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Change the version if you want a different torch version.
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.9.0
 
-COPY app.py .
-COPY services.py .
+COPY . .
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Expose port
+EXPOSE 80
+
+# Run FastAPI with Uvicorn
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-80}"]
 
 
