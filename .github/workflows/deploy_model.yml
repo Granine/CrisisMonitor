@@ -5,14 +5,14 @@ on:
     branches:
       - main
     paths:
-      - 'backend/**'      # only trigger when something inside frontend changes
-      - '.github/workflows/deploy_be.yml' # (optional) trigger if workflow itself changes
+      - 'model/**'      # only trigger when something inside frontend changes
+      - '.github/workflows/deploy_model.yml' # (optional) trigger if workflow itself changes
   workflow_dispatch:        # allows manual runs too
 
 env:
   AWS_REGION: us-east-2
-  INSTANCE_NAME: disaster-classify-web
-  IMAGE_NAME: viriyadhika/disaster-classification-mscac:latest
+  INSTANCE_NAME: disaster-classify-model
+  IMAGE_NAME: viriyadhika/disaster-classification-mscac-model:latest
   SECURITY_GROUP: disaster-classify-sg
   KEY_NAME: disaster-keypair
 
