@@ -78,7 +78,7 @@ jobs:
               --count 1 \
               --instance-type t3.micro \
               --key-name "${KEY_NAME}"  \
-              --user-data file://setup.sh \
+              --user-data file://setup_model.sh \
               --security-groups "${SECURITY_GROUP}"  \
               --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${INSTANCE_NAME}}]" \
               --query "Instances[0].InstanceId" --output text)
