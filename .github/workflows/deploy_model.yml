@@ -1,0 +1,104 @@
+name: Full EC2 Deployment (Auto-create + Deploy)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'      # only trigger when something inside frontend changes
+      - '.github/workflows/deploy_be.yml' # (optional) trigger if workflow itself changes
+  workflow_dispatch:        # allows manual runs too
+
+env:
+  AWS_REGION: us-east-2
+  INSTANCE_NAME: disaster-classify-web
+  IMAGE_NAME: viriyadhika/disaster-classification-mscac:latest
+  SECURITY_GROUP: disaster-classify-sg
+  KEY_NAME: disaster-keypair
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # --- Create Key Pair if not exists ---
+      - name: Create EC2 key pair (if missing)
+        run: |
+          if ! aws ec2 describe-key-pairs --key-names "${KEY_NAME}" >/dev/null 2>&1; then
+            echo "Creating key pair..."
+            aws ec2 create-key-pair --key-name "${KEY_NAME}" \
+              --query "KeyMaterial" --output text > mykey.pem
+            chmod 400 mykey.pem
+          else
+            echo "Key pair already exists."
+          fi
+
+      # --- Create Security Group if not exists ---
+      - name: Create security group
+        run: |
+          if ! aws ec2 describe-security-groups --group-names "${SECURITY_GROUP}" >/dev/null 2>&1; then
+            echo "Creating security group..."
+            aws ec2 create-security-group \
+              --group-name "${SECURITY_GROUP}" \
+              --description "Allow SSH and HTTP"
+            aws ec2 authorize-security-group-ingress \
+              --group-name "${SECURITY_GROUP}" \
+              --protocol tcp --port 22 --cidr 0.0.0.0/0
+            aws ec2 authorize-security-group-ingress \
+              --group-name "${SECURITY_GROUP}" \
+              --protocol tcp --port 80 --cidr 0.0.0.0/0
+          else
+            echo "Security group already exists."
+          fi
+
+      # --- Launch EC2 instance (if none exist) ---
+      - name: Launch EC2 instance
+        id: launch
+        run: |
+          INSTANCE_ID=$(aws ec2 describe-instances \
+            --filters "Name=tag:Name,Values=${INSTANCE_NAME}" "Name=instance-state-name,Values=running,pending" \
+            --query "Reservations[*].Instances[*].InstanceId" --output text)
+
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "Creating new EC2 instance..."
+            INSTANCE_ID=$(aws ec2 run-instances \
+              --image-id ami-0cfde0ea8edd312d4 \
+              --count 1 \
+              --instance-type t3.micro \
+              --key-name "${KEY_NAME}"  \
+              --user-data file://setup.sh \
+              --security-groups "${SECURITY_GROUP}"  \
+              --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${INSTANCE_NAME}}]" \
+              --query "Instances[0].InstanceId" --output text)
+            echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+          else
+            echo "Existing instance found: $INSTANCE_ID"
+            echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+          fi
+
+      # --- Wait for instance and get its public IP ---
+      - name: Wait for EC2 and get public IP
+        id: ec2ip
+        run: |
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+          PUBLIC_IP=$(aws ec2 describe-instances \
+            --instance-ids $INSTANCE_ID \
+            --query "Reservations[0].Instances[0].PublicIpAddress" \
+            --output text)
+          echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_ENV
+          echo "Instance Public IP: $PUBLIC_IP"
+
+      - name: Output final status
+        run: echo "✅ App is deployed and reachable at http://${{ env.PUBLIC_IP }}"
