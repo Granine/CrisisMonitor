@@ -10,7 +10,7 @@ on:
   push:
     branches:
       - main
-      - aws-eks
+      - feat/model
     paths:
       - 'backend/**'
       - 'k8s/**'
