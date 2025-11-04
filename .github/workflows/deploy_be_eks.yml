@@ -170,6 +170,68 @@ jobs:
         # curl -fsS -X POST http://localhost:8000/predict-tweet -H 'Content-Type: application/json' -d '{"text":"hello my house burned down!! help"}' || true
         kill $PF_PID || true
 
+    - name: Wait and test backend (robust)
+      shell: bash
+      run: |
+        set -euxo pipefail
+
+        NAMESPACE="${NAMESPACE:-mlapp}"
+
+        echo "Waiting for backend rollout..."
+        kubectl -n "${NAMESPACE}" rollout status deploy/backend --timeout=350s
+
+        POD=$(kubectl -n "${NAMESPACE}" get pods -l app=backend -o jsonpath='{.items[0].metadata.name}')
+        echo "Using pod: $POD"
+
+        # Try to read containerPort from deployment (fallback to 8000)
+        CONTAINER_PORT=$(kubectl -n "${NAMESPACE}" get deploy backend -o jsonpath='{.spec.template.spec.containers[0].ports[0].containerPort}' 2>/dev/null || echo "")
+        CONTAINER_PORT=${CONTAINER_PORT:-8000}
+        echo "Assumed container port: $CONTAINER_PORT"
+
+        echo "--- pod describe ---"
+        kubectl -n "${NAMESPACE}" describe pod "$POD" || true
+
+        echo "--- pod logs (tail 200) ---"
+        kubectl -n "${NAMESPACE}" logs "$POD" --tail=200 || true
+
+        echo "--- listening sockets inside pod ---"
+        kubectl -n "${NAMESPACE}" exec -it "$POD" -- sh -c 'ss -lntp || netstat -ltnp || echo "no ss/netstat available"' || true
+
+        # Port-forward directly to the pod's container port (pods avoid svc targetPort surprises)
+        kubectl -n "${NAMESPACE}" port-forward "pod/$POD" 8000:"${CONTAINER_PORT}" >/tmp/portforward.log 2>&1 &
+        PF_PID=$!
+        echo "started port-forward (pid=$PF_PID), sleeping 6s to let it come up..."
+        sleep 6
+
+        # show any port-forward output
+        tail -n +1 /tmp/portforward.log || true
+
+        # wait up to 15s for health endpoint to respond
+        OK=0
+        for i in $(seq 1 15); do
+          if curl -fsS "http://localhost:8000/health" >/dev/null 2>&1; then
+            OK=1
+            break
+          fi
+          echo "waiting for forwarded port..."
+          sleep 1
+        done
+
+        if [ "$OK" -ne 1 ]; then
+          echo "Healthcheck failed after port-forward. Showing logs and describe..."
+          kubectl -n "${NAMESPACE}" describe pod "$POD" || true
+          kubectl -n "${NAMESPACE}" logs "$POD" --tail=400 || true
+          echo "Port-forward log:"
+          sed -n '1,200p' /tmp/portforward.log || true
+          kill $PF_PID || true
+          exit 1
+        fi
+
+        # example POST to backend predict endpoint (may return 503 if model endpoint not present)
+        curl -fsS -X POST "http://localhost:8000/predict-tweet" -H 'Content-Type: application/json' -d '{"text":"hello my house burned down!! help"}' || true
+
+        kill $PF_PID || true
+
     - name: Collect cluster diagnostics
       if: always()
       shell: bash
@@ -199,18 +261,20 @@ jobs:
           # Process list
           kubectl -n "${NAMESPACE}" exec "$POD" -- sh -c 'ps aux || ps' > diagnostics/"$POD".ps.txt || true
 
-          # Quick Python import test for backend module (helps detect ModuleNotFoundError issues)
-          kubectl -n "${NAMESPACE}" exec "$POD" -- sh -c "python -c \"import importlib,sys
-          
-        try:
-          m=importlib.import_module('backend.app')
-          print('IMPORT_OK', getattr(m,'app', '<no app>'))
+          # Quick Python import test for backend module (run inside pod); helpful to detect ModuleNotFoundError
+          kubectl -n "${NAMESPACE}" exec -i "$POD" -- python - > "diagnostics/${POD}.pyimport.txt" 2>&1 <<'PY'
+          import importlib
+          try:
+              m = importlib.import_module('backend.app')
+              print('IMPORT_OK', getattr(m, 'app', '<no app>'))
           except Exception as e:
-          print('IMPORT_ERROR', e)\" " > diagnostics/"$POD".pyimport.txt || true
-          done
+              print('IMPORT_ERROR', repr(e))
+          PY
 
-          echo "Collecting events..."
-          kubectl -n "${NAMESPACE}" get events --sort-by='.lastTimestamp' -o yaml > diagnostics/events.yaml || true
+        done
+
+        echo "Collecting events..."
+        kubectl -n "${NAMESPACE}" get events --sort-by='.lastTimestamp' -o yaml > diagnostics/events.yaml || true
 
         # Tar up diagnostics
         tar -czf diagnostics.tar.gz diagnostics || true
@@ -222,6 +286,7 @@ jobs:
       with:
         name: cluster-diagnostics
         path: diagnostics.tar.gz
+
 
 
     - name: Demo window
