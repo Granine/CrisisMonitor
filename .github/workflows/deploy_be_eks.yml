@@ -174,7 +174,6 @@ jobs:
         POD=$(kubectl -n "${NAMESPACE}" get pods -l app=backend -o jsonpath='{.items[0].metadata.name}')
         echo "Using pod: $POD"
 
-        # Try to read containerPort from deployment (fallback to 8000)
         CONTAINER_PORT=$(kubectl -n "${NAMESPACE}" get deploy backend -o jsonpath='{.spec.template.spec.containers[0].ports[0].containerPort}' 2>/dev/null || echo "")
         CONTAINER_PORT=${CONTAINER_PORT:-8000}
         echo "Assumed container port: $CONTAINER_PORT"
@@ -219,14 +218,16 @@ jobs:
         fi
 
         # example POST to backend predict endpoint (may return 503 if model endpoint not present)
-        curl -fsS -X POST "http://localhost:8000/predict-tweet" -H 'Content-Type: application/json' -d '{"text":"hello my house burned down!! help"}' || true
+        # curl -fsS -X POST "http://localhost:8000/predict-tweet" -H 'Content-Type: application/json' -d '{"text":"hello my house burned down!! help"}' || true
 
         kill $PF_PID || true
 
     - name: Demo window
       run: |
-        echo "Cluster is up. Auto-cleanup in ${{ github.event.inputs.keep_minutes || 30 }} minutes..."
-        sleep "$(( ${{ github.event.inputs.keep_minutes }} * 60 ))"
+        KEEP=${{ github.event.inputs.keep_minutes || 30 }}
+        echo "Cluster is up. Auto-cleanup in ${KEEP} minutes..."
+        sleep $(( KEEP * 60 ))
+
 
     - name: Snapshot Mongo EBS volume (preserve data)
       if: always()
