@@ -10,5 +10,5 @@ spec:
   ports:
     - name: http
       port: 80        # service port (what port-forward svc:local maps to)
-      targetPort: 8000  # container port inside pod
+      targetPort: 80  # container port inside pod
       protocol: TCP

@@ -13,7 +13,7 @@ from pymongo import MongoClient
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-MODEL_URL = f"http://{os.getenv('MODEL_SERVICE_HOST','model-svc')}:{os.getenv('MODEL_SERVICE_PORT','8000')}"
+MODEL_URL = f"http://{os.getenv('MODEL_SERVICE_HOST','model-svc')}:{os.getenv('MODEL_SERVICE_PORT','80')}"
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://root:example@mongodb-0.mongodb-svc.mlapp.svc.cluster.local:27017/?authSource=admin")
 DB_NAME = os.getenv("MONGO_DB", "mlapp")
 
@@ -27,7 +27,7 @@ events = db["events"]
 # allowed origins (frontend domains)
 origins = [
     "http://localhost:3000",     # local dev (React/Vite/Next.js)
-    "http://localhost:8000", 
+    "http://localhost:80", 
     "https://disaster-classification-mscac.netlify.app/",  # deployed frontend
 ]
 
