@@ -27,6 +27,7 @@ events = db["events"]
 # allowed origins (frontend domains)
 origins = [
     "http://localhost:3000",     # local dev (React/Vite/Next.js)
+    "http://localhost:8000", 
     "https://disaster-classification-mscac.netlify.app/",  # deployed frontend
 ]
 
