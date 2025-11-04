@@ -160,15 +160,6 @@ jobs:
         kubectl apply -n "${NAMESPACE}" -f k8s/20-backend-deployment.yaml
         kubectl apply -n "${NAMESPACE}" -f k8s/21-backend-service.yaml
 
-    - name: Wait and test backend
-      run: |
-        kubectl -n "${NAMESPACE}" rollout status deploy/backend --timeout=350s
-        kubectl -n "${NAMESPACE}" port-forward svc/backend-svc 8000:80 &
-        PF_PID=$!
-        sleep 8
-        curl -fsS http://localhost:8000/health
-        # curl -fsS -X POST http://localhost:8000/predict-tweet -H 'Content-Type: application/json' -d '{"text":"hello my house burned down!! help"}' || true
-        kill $PF_PID || true
 
     - name: Wait and test backend (robust)
       shell: bash
@@ -238,7 +229,6 @@ jobs:
       run: |
         set -euxo pipefail
         mkdir -p diagnostics
-
         echo "Collecting basic cluster resources..."
         kubectl -n "${NAMESPACE}" get pods -o wide > diagnostics/pods.txt || true
         kubectl -n "${NAMESPACE}" get all -o wide > diagnostics/all.txt || true
@@ -246,7 +236,6 @@ jobs:
         kubectl -n "${NAMESPACE}" get endpoints -o yaml > diagnostics/endpoints.yaml || true
         kubectl -n "${NAMESPACE}" get deploy backend -o yaml > diagnostics/backend-deploy.yaml || true
         kubectl -n "${NAMESPACE}" describe deploy backend > diagnostics/backend-deploy.describe.txt || true
-
         echo "Collecting pod-level diagnostics..."
         PODS=$(kubectl -n "${NAMESPACE}" get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
         for POD in $PODS; do
@@ -254,13 +243,10 @@ jobs:
           kubectl -n "${NAMESPACE}" describe pod "$POD" > diagnostics/"$POD".describe.txt || true
           kubectl -n "${NAMESPACE}" logs "$POD" --tail=1000 > diagnostics/"$POD".logs.txt || true
           kubectl -n "${NAMESPACE}" logs "$POD" --previous --tail=1000 > diagnostics/"$POD".logs.previous.txt || true
-
           # Listening sockets (if ss/netstat present)
           kubectl -n "${NAMESPACE}" exec "$POD" -- sh -c 'ss -lntp || netstat -ltnp || echo "no ss/netstat available"' > diagnostics/"$POD".sockets.txt || true
-
           # Process list
           kubectl -n "${NAMESPACE}" exec "$POD" -- sh -c 'ps aux || ps' > diagnostics/"$POD".ps.txt || true
-
           # Quick Python import test for backend module (run inside pod); helpful to detect ModuleNotFoundError
           kubectl -n "${NAMESPACE}" exec -i "$POD" -- python - > "diagnostics/${POD}.pyimport.txt" 2>&1 <<'PY'
           import importlib
@@ -270,22 +256,19 @@ jobs:
           except Exception as e:
               print('IMPORT_ERROR', repr(e))
           PY
-
         done
-
         echo "Collecting events..."
         kubectl -n "${NAMESPACE}" get events --sort-by='.lastTimestamp' -o yaml > diagnostics/events.yaml || true
-
         # Tar up diagnostics
         tar -czf diagnostics.tar.gz diagnostics || true
         ls -lh diagnostics.tar.gz
 
-    - name: Upload cluster diagnostics artifact
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: cluster-diagnostics
-        path: diagnostics.tar.gz
+        - name: Upload cluster diagnostics artifact
+          if: always()
+          uses: actions/upload-artifact@v4
+          with:
+            name: cluster-diagnostics
+            path: diagnostics.tar.gz
 
 
 
