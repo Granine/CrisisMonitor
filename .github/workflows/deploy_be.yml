@@ -68,25 +68,32 @@ jobs:
         id: launch
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=${INSTANCE_NAME}" "Name=instance-state-name,Values=running,pending" \
+            --filters "Name=tag:Name,Values=${INSTANCE_NAME}" "Name=instance-state-name,Values=running,pending,stopped,stopping" \
             --query "Reservations[*].Instances[*].InstanceId" --output text)
-
-          if [ -z "$INSTANCE_ID" ]; then
-            echo "Creating new EC2 instance..."
-            INSTANCE_ID=$(aws ec2 run-instances \
-              --image-id ami-0cfde0ea8edd312d4 \
-              --count 1 \
-              --instance-type t3.micro \
-              --key-name "${KEY_NAME}"  \
-              --user-data file://setup_be.sh \
-              --security-groups "${SECURITY_GROUP}"  \
-              --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${INSTANCE_NAME}}]" \
-              --query "Instances[0].InstanceId" --output text)
-            echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
-          else
+          
+          if [ -n "$INSTANCE_ID" ]; then
             echo "Existing instance found: $INSTANCE_ID"
-            echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+            echo "Terminating existing instance..."
+            aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" >/dev/null
+            echo "Waiting for instance to terminate..."
+            aws ec2 wait instance-terminated --instance-ids "$INSTANCE_ID"
+            echo "Instance $INSTANCE_ID terminated."
           fi
+          
+          echo "Creating new EC2 instance..."
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id ami-0cfde0ea8edd312d4 \
+            --count 1 \
+            --instance-type t3.micro \
+            --key-name "${KEY_NAME}" \
+            --user-data file://setup_be.sh \
+            --security-groups "${SECURITY_GROUP}" \
+            --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${INSTANCE_NAME}}]" \
+            --query "Instances[0].InstanceId" --output text)
+          
+          echo "New instance created: $INSTANCE_ID"
+          echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+
 
       # --- Wait for instance and get its public IP ---
       - name: Wait for EC2 and get public IP
