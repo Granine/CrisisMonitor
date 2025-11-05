@@ -82,7 +82,7 @@ jobs:
           
           echo "Creating new EC2 instance..."
           INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id ami-0cfde0ea8edd312d4 \
+            --image-id ami-083b3f53cbda7e5a4 \
             --count 1 \
             --instance-type t3.small \
             --key-name "${KEY_NAME}" \
