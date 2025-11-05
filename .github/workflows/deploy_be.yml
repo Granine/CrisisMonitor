@@ -129,7 +129,7 @@ jobs:
 
           if [ "$VOLUME_ID" = "None" ]; then
             echo "Creating new EBS volume..."
-            VOLUME_ID=$(aws ec2 create-volume --availability-zone us-east-2a --size ${EBS_SIZE} --volume-type gp3 \
+            VOLUME_ID=$(aws ec2 create-volume --availability-zone ${AWS_REGION} --size ${EBS_SIZE} --volume-type gp3 \
               --tag-specifications "ResourceType=volume,Tags=[{Key=Name,Value=${EBS_VOLUME_NAME}}]" \
               --query "VolumeId" --output text)
             aws ec2 wait volume-available --volume-ids $VOLUME_ID
