@@ -84,7 +84,7 @@ jobs:
           INSTANCE_ID=$(aws ec2 run-instances \
             --image-id ami-0cfde0ea8edd312d4 \
             --count 1 \
-            --instance-type t3.micro \
+            --instance-type t3.small \
             --key-name "${KEY_NAME}" \
             --user-data file://setup_model.sh \
             --security-groups "${SECURITY_GROUP}" \
