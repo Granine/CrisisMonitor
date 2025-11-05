@@ -1,8 +1,5 @@
 ```bash
-docker buildx build \
-  --platform "linux/amd64,linux/arm64" \
-  -t viriyadhika/disaster-classification-mscac-model:latest \
-  --push .
+docker buildx build --platform "linux/amd64,linux/arm64" -t viriyadhika/disaster-classification-mscac-model:latest --push .
 ```
 
 __To learn more: Why do I need to build for 2 OS?__
