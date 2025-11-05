@@ -28,9 +28,19 @@ sudo chown -R ec2-user:ec2-user $VOLUME_PATH
 
 echo "$DEVICE_NAME $VOLUME_PATH ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
 
+# ---------- Create Docker Network ----------
+DOCKER_NETWORK="mlapp-net"
+if ! sudo docker network ls --format '{{.Name}}' | grep -q "^${DOCKER_NETWORK}$"; then
+  echo "Creating Docker network: ${DOCKER_NETWORK}"
+  sudo docker network create "${DOCKER_NETWORK}"
+else
+  echo "Docker network ${DOCKER_NETWORK} already exists."
+fi
+
 # ---------- Run MongoDB ----------
 sudo docker run -d --restart always \
   --name mongo \
+  --network ${DOCKER_NETWORK} \
   -v ${VOLUME_PATH}:/data/db \
   -p 27017:27017 \
   mongo:6
@@ -48,8 +58,10 @@ echo "MODEL_SERVICE_HOST resolved to: ${MODEL_SERVICE_HOST}"
 
 # ---------- Run Backend ----------
 sudo docker run -d --restart always \
+  --name backend \
+  --network ${DOCKER_NETWORK} \
   -p 80:80 \
-  -e "MONGO_URI=mongodb://localhost:27017/mlapp" \
+  -e "MONGO_URI=mongodb://mongo:27017/mlapp" \
   -e "MODEL_SERVICE_HOST=${MODEL_SERVICE_HOST}" \
   -e "MODEL_SERVICE_PORT=80" \
   viriyadhika/disaster-classification-mscac:latest
