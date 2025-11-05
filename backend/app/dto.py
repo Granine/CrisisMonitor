@@ -7,7 +7,7 @@ import random
 app = FastAPI()
 
 class TweetInput(BaseModel):
-    tweet: str
+    text: str
 
 class PredictionOutput(BaseModel):
     id: str
