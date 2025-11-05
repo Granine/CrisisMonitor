@@ -63,7 +63,7 @@ jobs:
             echo "Security group already exists."
           fi
 
-      # --- Launch EC2 instance (if none exist) ---
+      # --- Launch EC2 instance (recreate logic) ---
       - name: Launch EC2 instance
         id: launch
         run: |
@@ -109,3 +109,16 @@ jobs:
 
       - name: Output final status
         run: echo "✅ App is deployed and reachable at http://${{ env.PUBLIC_IP }}"
+
+      - name: Save instance public IP to SSM Parameter Store
+        run: |
+          PARAM_NAME="/mlapp/model/PublicIP"
+
+          echo "Storing PUBLIC_IP ($PUBLIC_IP) in Parameter Store..."
+          aws ssm put-parameter \
+            --name "$PARAM_NAME" \
+            --type "String" \
+            --value "$PUBLIC_IP" \
+            --overwrite
+
+          echo "✅ Saved to Parameter Store: $PARAM_NAME=$PUBLIC_IP"
