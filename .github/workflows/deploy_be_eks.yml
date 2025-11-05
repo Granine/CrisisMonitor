@@ -7,14 +7,14 @@ on:
         description: "Minutes to keep the cluster alive"
         default: "30"
         required: true
-  push:
-    branches:
-      - main
-      - feat/model
-    paths:
-      - 'backend/**'
-      - 'k8s/**'
-      - '.github/workflows/deploy_be_eks.yml'
+  # push:
+  #   branches:
+  #     - main
+  #     - feat/model
+  #   paths:
+  #     - 'backend/**'
+  #     - 'k8s/**'
+  #     - '.github/workflows/deploy_be_eks.yml'
 
 env:
   CLUSTER_NAME: mlapp-demo
