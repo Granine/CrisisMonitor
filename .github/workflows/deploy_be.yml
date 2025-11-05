@@ -5,9 +5,9 @@ on:
     branches:
       - main
     paths:
-      - 'backend/**'      # only trigger when something inside frontend changes
-      - '.github/workflows/deploy_be.yml' # (optional) trigger if workflow itself changes
-  workflow_dispatch:        # allows manual runs too
+      - 'backend/**'
+      - '.github/workflows/deploy_be.yml'
+  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-2
@@ -17,6 +17,8 @@ env:
   KEY_NAME: disaster-keypair
   ROLE_NAME: EC2ParameterStoreAccessRole
   INSTANCE_PROFILE_NAME: EC2ParameterStoreProfile
+  EBS_VOLUME_NAME: disaster-db-volume
+  EBS_SIZE: 5  # GB
 
 jobs:
   deploy:
@@ -35,7 +37,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # --- Create Key Pair if not exists ---
+      # --- Create EC2 key pair ---
       - name: Create EC2 key pair (if missing)
         run: |
           if ! aws ec2 describe-key-pairs --key-names "${KEY_NAME}" >/dev/null 2>&1; then
@@ -43,84 +45,56 @@ jobs:
             aws ec2 create-key-pair --key-name "${KEY_NAME}" \
               --query "KeyMaterial" --output text > mykey.pem
             chmod 400 mykey.pem
-          else
-            echo "Key pair already exists."
           fi
 
-      # --- Create Security Group if not exists ---
+      # --- Create Security Group ---
       - name: Create security group
         run: |
           if ! aws ec2 describe-security-groups --group-names "${SECURITY_GROUP}" >/dev/null 2>&1; then
             echo "Creating security group..."
             aws ec2 create-security-group \
               --group-name "${SECURITY_GROUP}" \
-              --description "Allow SSH and HTTP"
+              --description "Allow SSH, HTTP, and MongoDB"
             aws ec2 authorize-security-group-ingress \
               --group-name "${SECURITY_GROUP}" \
               --protocol tcp --port 22 --cidr 0.0.0.0/0
             aws ec2 authorize-security-group-ingress \
               --group-name "${SECURITY_GROUP}" \
               --protocol tcp --port 80 --cidr 0.0.0.0/0
-          else
-            echo "Security group already exists."
+            aws ec2 authorize-security-group-ingress \
+              --group-name "${SECURITY_GROUP}" \
+              --protocol tcp --port 27017 --cidr 0.0.0.0/0
           fi
 
-      # --- Launch EC2 instance (if none exist) ---
-      # --- Create IAM Role for EC2 access to Parameter Store ---
+      # --- Ensure IAM Role for SSM access ---
       - name: Ensure IAM role and instance profile exist
         run: |
           set -e
-
-          # Create IAM Role if missing
           if ! aws iam get-role --role-name "${ROLE_NAME}" >/dev/null 2>&1; then
-            echo "Creating IAM role: ${ROLE_NAME}"
             aws iam create-role \
               --role-name "${ROLE_NAME}" \
               --assume-role-policy-document '{
                 "Version": "2012-10-17",
-                "Statement": [
-                  {
-                    "Effect": "Allow",
-                    "Principal": { "Service": "ec2.amazonaws.com" },
-                    "Action": "sts:AssumeRole"
-                  }
-                ]
+                "Statement": [{"Effect": "Allow","Principal": {"Service": "ec2.amazonaws.com"},"Action": "sts:AssumeRole"}]
               }'
-          else
-            echo "IAM role already exists: ${ROLE_NAME}"
           fi
 
-          # Attach inline policy for SSM access
           aws iam put-role-policy \
             --role-name "${ROLE_NAME}" \
             --policy-name "ParameterStoreAccess" \
             --policy-document '{
               "Version": "2012-10-17",
-              "Statement": [
-                {
-                  "Effect": "Allow",
-                  "Action": [
-                    "ssm:GetParameter",
-                    "ssm:GetParameters",
-                    "ssm:GetParametersByPath"
-                  ],
-                  "Resource": "*"
-                }
-              ]
+              "Statement": [{"Effect": "Allow","Action": ["ssm:GetParameter","ssm:GetParameters","ssm:GetParametersByPath"],"Resource": "*"}]
             }'
 
-          # Create instance profile if missing
           if ! aws iam get-instance-profile --instance-profile-name "${INSTANCE_PROFILE_NAME}" >/dev/null 2>&1; then
-            echo "Creating instance profile: ${INSTANCE_PROFILE_NAME}"
             aws iam create-instance-profile --instance-profile-name "${INSTANCE_PROFILE_NAME}"
             aws iam add-role-to-instance-profile \
               --instance-profile-name "${INSTANCE_PROFILE_NAME}" \
               --role-name "${ROLE_NAME}"
-          else
-            echo "Instance profile already exists: ${INSTANCE_PROFILE_NAME}"
           fi
 
-      # --- Launch EC2 instance (if none exist) ---
+      # --- Launch EC2 instance with EBS volume ---
       - name: Launch EC2 instance
         id: launch
         run: |
@@ -129,12 +103,8 @@ jobs:
             --query "Reservations[*].Instances[*].InstanceId" --output text)
 
           if [ -n "$INSTANCE_ID" ]; then
-            echo "Existing instance found: $INSTANCE_ID"
-            echo "Terminating existing instance..."
             aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" >/dev/null
-            echo "Waiting for instance to terminate..."
             aws ec2 wait instance-terminated --instance-ids "$INSTANCE_ID"
-            echo "Instance $INSTANCE_ID terminated."
           fi
 
           echo "Creating new EC2 instance..."
@@ -149,21 +119,33 @@ jobs:
             --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${INSTANCE_NAME}}]" \
             --query "Instances[0].InstanceId" --output text)
 
-          echo "New instance created: $INSTANCE_ID"
           echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
 
+          echo "Waiting for instance to initialize..."
+          aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
 
-      # --- Wait for instance and get its public IP ---
-      - name: Wait for EC2 and get public IP
+          echo "Attaching or creating EBS volume..."
+          VOLUME_ID=$(aws ec2 describe-volumes --filters "Name=tag:Name,Values=${EBS_VOLUME_NAME}" --query "Volumes[0].VolumeId" --output text)
+
+          if [ "$VOLUME_ID" = "None" ]; then
+            echo "Creating new EBS volume..."
+            VOLUME_ID=$(aws ec2 create-volume --availability-zone us-east-2a --size ${EBS_SIZE} --volume-type gp3 \
+              --tag-specifications "ResourceType=volume,Tags=[{Key=Name,Value=${EBS_VOLUME_NAME}}]" \
+              --query "VolumeId" --output text)
+            aws ec2 wait volume-available --volume-ids $VOLUME_ID
+          fi
+
+          aws ec2 attach-volume --device /dev/xvdf --instance-id $INSTANCE_ID --volume-id $VOLUME_ID
+          echo "VOLUME_ID=$VOLUME_ID" >> $GITHUB_ENV
+
+      # --- Get Public IP ---
+      - name: Get public IP
         id: ec2ip
         run: |
-          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
-          PUBLIC_IP=$(aws ec2 describe-instances \
-            --instance-ids $INSTANCE_ID \
-            --query "Reservations[0].Instances[0].PublicIpAddress" \
-            --output text)
+          PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID \
+            --query "Reservations[0].Instances[0].PublicIpAddress" --output text)
           echo "PUBLIC_IP=$PUBLIC_IP" >> $GITHUB_ENV
           echo "Instance Public IP: $PUBLIC_IP"
 
       - name: Output final status
-        run: echo "✅ App is deployed and reachable at http://${{ env.PUBLIC_IP }}"
+        run: echo "✅ Backend + MongoDB deployed and reachable at http://${{ env.PUBLIC_IP }}"

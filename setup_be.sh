@@ -4,15 +4,41 @@ set -e
 # ---------- Install dependencies ----------
 sudo dnf update -y
 sudo dnf install -y docker awscli
-
-# ---------- Enable and start Docker ----------
 sudo systemctl enable docker
 sudo systemctl start docker
 
-# ---------- Wait for instance profile credentials ----------
+# ---------- Prepare EBS Volume ----------
+VOLUME_PATH="/data/mongo"
+DEVICE_NAME="/dev/xvdf"
+
+if [ ! -d "$VOLUME_PATH" ]; then
+  sudo mkdir -p "$VOLUME_PATH"
+fi
+
+# Wait for device to be ready
 sleep 10
 
-# ---------- Fetch the model service IP from SSM (fallback to localhost) ----------
+if ! sudo file -s $DEVICE_NAME | grep -q ext4; then
+  echo "Formatting EBS volume..."
+  sudo mkfs -t ext4 $DEVICE_NAME
+fi
+
+sudo mount $DEVICE_NAME $VOLUME_PATH
+sudo chown -R ec2-user:ec2-user $VOLUME_PATH
+
+echo "$DEVICE_NAME $VOLUME_PATH ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab
+
+# ---------- Run MongoDB ----------
+sudo docker run -d --restart always \
+  --name mongo \
+  -v ${VOLUME_PATH}:/data/db \
+  -p 27017:27017 \
+  mongo:6
+
+# ---------- Wait for Mongo to start ----------
+sleep 10
+
+# ---------- Fetch model service IP ----------
 MODEL_SERVICE_HOST=$(aws ssm get-parameter \
   --name "/mlapp/model/PublicIP" \
   --query "Parameter.Value" \
@@ -20,9 +46,10 @@ MODEL_SERVICE_HOST=$(aws ssm get-parameter \
 
 echo "MODEL_SERVICE_HOST resolved to: ${MODEL_SERVICE_HOST}"
 
-# ---------- Run container ----------
-sudo docker run -d --restart always -p 80:80 \
-  -e "MONGO_URI=mongodb://root:example@mongodb-0.mongodb-svc.mlapp.svc.cluster.local:27017/?authSource=admin" \
+# ---------- Run Backend ----------
+sudo docker run -d --restart always \
+  -p 80:80 \
+  -e "MONGO_URI=mongodb://localhost:27017/mlapp" \
   -e "MODEL_SERVICE_HOST=${MODEL_SERVICE_HOST}" \
   -e "MODEL_SERVICE_PORT=80" \
   viriyadhika/disaster-classification-mscac:latest
