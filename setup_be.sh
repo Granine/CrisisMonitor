@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ---------- Config ----------
 VOLUME_PATH="/data/mongo"
-DEVICE_NAME="/dev/xvdf"
+DEVICE_NAME=$(lsblk -ndo NAME,TYPE | awk '$2=="disk"{print "/dev/"$1}' | grep -v nvme0n1 | head -n1)
 DOCKER_NETWORK="mlapp-net"
 MONGO_CONTAINER="mongo"
 BACKEND_CONTAINER="backend"
