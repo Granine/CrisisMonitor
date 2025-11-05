@@ -1,13 +1,27 @@
 #!/bin/bash
+set -e
 
-sudo apt update -y
-sudo apt install -y docker.io
+# ---------- Install dependencies ----------
+sudo dnf update -y
+sudo dnf install -y docker awscli
+
+# ---------- Enable and start Docker ----------
 sudo systemctl enable docker
 sudo systemctl start docker
 
-MODEL_SERVICE_HOST=$(aws ssm get-parameter --name "/mlapp/model/PublicIP" --query "Parameter.Value" --output text 2>/dev/null)
+# ---------- Wait for instance profile credentials ----------
+sleep 10
 
-sudo docker run -d -p 80:80 \
+# ---------- Fetch the model service IP from SSM (fallback to localhost) ----------
+MODEL_SERVICE_HOST=$(aws ssm get-parameter \
+  --name "/mlapp/model/PublicIP" \
+  --query "Parameter.Value" \
+  --output text 2>/dev/null || echo "127.0.0.1")
+
+echo "MODEL_SERVICE_HOST resolved to: ${MODEL_SERVICE_HOST}"
+
+# ---------- Run container ----------
+sudo docker run -d --restart always -p 80:80 \
   -e "MONGO_URI=" \
   -e "MODEL_SERVICE_HOST=${MODEL_SERVICE_HOST}" \
   -e "MODEL_SERVICE_PORT=80" \
