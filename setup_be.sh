@@ -22,7 +22,7 @@ echo "MODEL_SERVICE_HOST resolved to: ${MODEL_SERVICE_HOST}"
 
 # ---------- Run container ----------
 sudo docker run -d --restart always -p 80:80 \
-  -e "MONGO_URI=" \
+  -e "MONGO_URI=mongodb://root:example@mongodb-0.mongodb-svc.mlapp.svc.cluster.local:27017/?authSource=admin" \
   -e "MODEL_SERVICE_HOST=${MODEL_SERVICE_HOST}" \
   -e "MODEL_SERVICE_PORT=80" \
   viriyadhika/disaster-classification-mscac:latest
