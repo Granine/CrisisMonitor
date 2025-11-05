@@ -16,6 +16,7 @@ env:
   SECURITY_GROUP: disaster-classify-sg
   KEY_NAME: disaster-keypair
   ROLE_NAME: EC2ParameterStoreAccessRole
+  INSTANCE_PROFILE_NAME: EC2ParameterStoreProfile
 
 jobs:
   deploy:
