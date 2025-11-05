@@ -25,8 +25,18 @@ sudo mkdir -p "$VOLUME_PATH"
 # Wait for device to be ready
 sleep 10
 
+echo "[INFO] Waiting for EBS device $DEVICE_NAME..."
+for i in {1..12}; do
+  if lsblk | grep -q "$(basename $DEVICE_NAME)"; then
+    echo "[INFO] $DEVICE_NAME detected."
+    break
+  fi
+  echo "[WARN] Device not ready yet, sleeping..."
+  sleep 5
+done
+
 if ! lsblk | grep -q "$(basename $DEVICE_NAME)"; then
-  echo "[ERROR] Device $DEVICE_NAME not found. Make sure EBS is attached."
+  echo "[ERROR] $DEVICE_NAME not found after waiting. Exiting."
   exit 1
 fi
 
