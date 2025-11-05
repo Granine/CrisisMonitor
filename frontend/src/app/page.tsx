@@ -46,7 +46,7 @@ function FeedContent() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground italic">
-                  {new Date(tweet.created_at).toLocaleString()}
+                  {new Date(tweet.evaluated_at).toLocaleString()}
                 </p>
                 <p className="mt-2">{tweet.cleaned_tweet}</p>
               </CardContent>

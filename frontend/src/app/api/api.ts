@@ -24,20 +24,20 @@ export type RecentTweet = {
     "id": string,
     "cleaned_tweet": string,
     "is_real_disaster": boolean,
-    "created_at": string
+    "evaluated_at": string
 }
 
 const mockData: RecentTweet[] = Array(5).fill(0).flatMap((_, idx) => ([{
     "id": String(2 * idx),
     "cleaned_tweet": "There's a huge fire downtown!",
     "is_real_disaster": true,
-    "created_at": "2025-10-14T15:12:00Z"
+    "evaluated_at": "2025-10-14T15:12:00Z"
 },
 {
     "id": String(2 * idx + 1),
     "cleaned_tweet": "David is in town",
     "is_real_disaster": false,
-    "created_at": "2025-10-14T15:12:00Z"
+    "evaluated_at": "2025-10-14T15:12:00Z"
 }
 ]))
 
