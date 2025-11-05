@@ -9,7 +9,7 @@ sudo systemctl start docker
 
 # ---------- Prepare EBS Volume ----------
 VOLUME_PATH="/data/mongo"
-DEVICE_NAME="/dev/xvdf"
+DEVICE_NAME=$(lsblk -no NAME,SIZE | grep 5G | awk '{print "/dev/"$1}')
 
 if [ ! -d "$VOLUME_PATH" ]; then
   sudo mkdir -p "$VOLUME_PATH"
