@@ -16,7 +16,7 @@ jobs:
       run:
         working-directory: ./frontend   # all commands run inside frontend folder
     env:
-      NEXT_PUBLIC_API_URL: "http://13.58.233.223"
+      NEXT_PUBLIC_API_URL: "/api"
 
     steps:
       - name: Checkout repo
