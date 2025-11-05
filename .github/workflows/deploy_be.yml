@@ -95,18 +95,24 @@ jobs:
           fi
 
       # --- Launch EC2 instance with EBS volume ---
-      - name: Launch EC2 instance
+      - name: Launch EC2 instance and attach EBS
         id: launch
         run: |
+          # Check if an instance already exists
           INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=${INSTANCE_NAME}" "Name=instance-state-name,Values=running,pending,stopped,stopping" \
+            --filters "Name=tag:Name,Values=${INSTANCE_NAME}" \
+            "Name=instance-state-name,Values=running,pending,stopped,stopping" \
             --query "Reservations[*].Instances[*].InstanceId" --output text)
 
           if [ -n "$INSTANCE_ID" ]; then
+            echo "Existing instance found: $INSTANCE_ID"
+            echo "Terminating existing instance..."
             aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" >/dev/null
             aws ec2 wait instance-terminated --instance-ids "$INSTANCE_ID"
+            echo "Instance $INSTANCE_ID terminated."
           fi
 
+          # Create new EC2 instance
           echo "Creating new EC2 instance..."
           INSTANCE_ID=$(aws ec2 run-instances \
             --image-id ami-083b3f53cbda7e5a4 \
@@ -124,18 +130,33 @@ jobs:
           echo "Waiting for instance to initialize..."
           aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
 
-          echo "Attaching or creating EBS volume..."
-          VOLUME_ID=$(aws ec2 describe-volumes --filters "Name=tag:Name,Values=${EBS_VOLUME_NAME}" --query "Volumes[0].VolumeId" --output text)
+          # Detect which AZ the instance is in
+          INSTANCE_AZ=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" \
+            --query "Reservations[0].Instances[0].Placement.AvailabilityZone" --output text)
+          echo "Instance is in AZ: $INSTANCE_AZ"
 
-          if [ "$VOLUME_ID" = "None" ]; then
-            echo "Creating new EBS volume..."
-            VOLUME_ID=$(aws ec2 create-volume --availability-zone ${AWS_REGION} --size ${EBS_SIZE} --volume-type gp3 \
+          # Check for existing EBS volume in same AZ
+          VOLUME_ID=$(aws ec2 describe-volumes \
+            --filters "Name=tag:Name,Values=${EBS_VOLUME_NAME}" "Name=availability-zone,Values=${INSTANCE_AZ}" \
+            --query "Volumes[0].VolumeId" --output text)
+
+          if [ "$VOLUME_ID" = "None" ] || [ -z "$VOLUME_ID" ]; then
+            echo "No existing volume found. Creating a new one in ${INSTANCE_AZ}..."
+            VOLUME_ID=$(aws ec2 create-volume \
+              --availability-zone ${INSTANCE_AZ} \
+              --size ${EBS_SIZE} \
+              --volume-type gp3 \
               --tag-specifications "ResourceType=volume,Tags=[{Key=Name,Value=${EBS_VOLUME_NAME}}]" \
               --query "VolumeId" --output text)
             aws ec2 wait volume-available --volume-ids $VOLUME_ID
+          else
+            echo "Reusing existing volume: $VOLUME_ID"
           fi
 
+          # Attach the EBS volume to the instance
+          echo "Attaching volume..."
           aws ec2 attach-volume --device /dev/xvdf --instance-id $INSTANCE_ID --volume-id $VOLUME_ID
+
           echo "VOLUME_ID=$VOLUME_ID" >> $GITHUB_ENV
 
       # --- Get Public IP ---
