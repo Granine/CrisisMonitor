@@ -15,6 +15,9 @@ env:
   IMAGE_NAME: viriyadhika/disaster-classification-mscac-model:latest
   SECURITY_GROUP: disaster-classify-sg
   KEY_NAME: disaster-keypair
+  ROLE_NAME: EC2ParameterStoreAccessRole
+  INSTANCE_PROFILE_NAME: EC2ParameterStoreProfile
+
 
 jobs:
   deploy:
@@ -63,6 +66,35 @@ jobs:
             echo "Security group already exists."
           fi
 
+            # --- Ensure IAM Role for SSM access ---
+
+      - name: Ensure IAM role and instance profile exist
+        run: |
+          set -e
+          if ! aws iam get-role --role-name "${ROLE_NAME}" >/dev/null 2>&1; then
+            aws iam create-role \
+              --role-name "${ROLE_NAME}" \
+              --assume-role-policy-document '{
+                "Version": "2012-10-17",
+                "Statement": [{"Effect": "Allow","Principal": {"Service": "ec2.amazonaws.com"},"Action": "sts:AssumeRole"}]
+              }'
+          fi
+
+          aws iam put-role-policy \
+            --role-name "${ROLE_NAME}" \
+            --policy-name "ParameterStoreAccess" \
+            --policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [{"Effect": "Allow","Action": ["ssm:GetParameter","ssm:GetParameters","ssm:GetParametersByPath"],"Resource": "*"}]
+            }'
+
+          if ! aws iam get-instance-profile --instance-profile-name "${INSTANCE_PROFILE_NAME}" >/dev/null 2>&1; then
+            aws iam create-instance-profile --instance-profile-name "${INSTANCE_PROFILE_NAME}"
+            aws iam add-role-to-instance-profile \
+              --instance-profile-name "${INSTANCE_PROFILE_NAME}" \
+              --role-name "${ROLE_NAME}"
+          fi
+
       # --- Launch EC2 instance (recreate logic) ---
       - name: Launch EC2 instance
         id: launch
@@ -87,6 +119,7 @@ jobs:
             --instance-type t3.small \
             --key-name "${KEY_NAME}" \
             --user-data file://setup_model.sh \
+            --iam-instance-profile Name="${INSTANCE_PROFILE_NAME}" \
             --security-groups "${SECURITY_GROUP}" \
             --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${INSTANCE_NAME}}]" \
             --query "Instances[0].InstanceId" --output text)
