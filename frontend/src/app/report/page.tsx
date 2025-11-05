@@ -26,7 +26,7 @@ function Home() {
       />
 
       <Button onClick={() => {
-        mutate({ tweet })
+        mutate({ text: tweet })
       }} className="w-40">Check Emergency</Button>
 
       {data && (

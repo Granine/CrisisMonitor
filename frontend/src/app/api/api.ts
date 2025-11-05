@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import axios, { AxiosError } from "axios"
 
 export type TweetInput = {
-    tweet: string
+    text: string
 }
 
 export type PredictionOutput = {
@@ -22,20 +22,20 @@ export function usePredictTweet() {
 
 export type RecentTweet = {
     "id": string,
-    "tweet": string,
+    "cleaned_tweet": string,
     "is_real_disaster": boolean,
     "created_at": string
 }
 
 const mockData: RecentTweet[] = Array(5).fill(0).flatMap((_, idx) => ([{
     "id": String(2 * idx),
-    "tweet": "There's a huge fire downtown!",
+    "cleaned_tweet": "There's a huge fire downtown!",
     "is_real_disaster": true,
     "created_at": "2025-10-14T15:12:00Z"
 },
 {
     "id": String(2 * idx + 1),
-    "tweet": "David is in town",
+    "cleaned_tweet": "David is in town",
     "is_real_disaster": false,
     "created_at": "2025-10-14T15:12:00Z"
 }
@@ -45,9 +45,19 @@ export function useRecentTweets() {
     return useQuery<RecentTweet[], AxiosError>({
         queryKey: ["recent-tweets"],
         queryFn: async () => {
-            return mockData
-            //   const res = await axios.post(`${API_URL}/recent`)
-            //   return res.data
+            const now = new Date();
+            const nowIsoUtc = now.toISOString();
+            const yesterday = new Date(now);
+            yesterday.setDate(now.getDate() - 1); // handles DST correctly
+            const yesterdayIsoUtc = yesterday.toISOString();
+              const res = await axios.get(`${API_URL}/events`, {
+                params: {
+                    start: yesterdayIsoUtc,
+                    end: nowIsoUtc,
+                    limit: 20
+                }
+              })
+              return res.data
         },
         refetchInterval: 60000,
     })
