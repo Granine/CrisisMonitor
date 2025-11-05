@@ -22,6 +22,7 @@ Pygments==2.19.2
 python-dotenv==1.1.1
 python-multipart==0.0.20
 PyYAML==6.0.3
+pymongo
 rich==14.1.0
 rich-toolkit==0.15.1
 rignore==0.7.0

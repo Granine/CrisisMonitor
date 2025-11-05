@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: mlapp
+data:
+  MODEL_SERVICE_HOST: "model-svc"
+  MODEL_SERVICE_PORT: "8000"
+  MONGO_DB: "mlapp"
+
