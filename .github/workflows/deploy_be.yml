@@ -64,13 +64,68 @@ jobs:
           fi
 
       # --- Launch EC2 instance (if none exist) ---
+      # --- Create IAM Role for EC2 access to Parameter Store ---
+      - name: Ensure IAM role and instance profile exist
+        run: |
+          set -e
+
+          # Create IAM Role if missing
+          if ! aws iam get-role --role-name "${ROLE_NAME}" >/dev/null 2>&1; then
+            echo "Creating IAM role: ${ROLE_NAME}"
+            aws iam create-role \
+              --role-name "${ROLE_NAME}" \
+              --assume-role-policy-document '{
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Principal": { "Service": "ec2.amazonaws.com" },
+                    "Action": "sts:AssumeRole"
+                  }
+                ]
+              }'
+          else
+            echo "IAM role already exists: ${ROLE_NAME}"
+          fi
+
+          # Attach inline policy for SSM access
+          aws iam put-role-policy \
+            --role-name "${ROLE_NAME}" \
+            --policy-name "ParameterStoreAccess" \
+            --policy-document '{
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:GetParameter",
+                    "ssm:GetParameters",
+                    "ssm:GetParametersByPath"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }'
+
+          # Create instance profile if missing
+          if ! aws iam get-instance-profile --instance-profile-name "${INSTANCE_PROFILE_NAME}" >/dev/null 2>&1; then
+            echo "Creating instance profile: ${INSTANCE_PROFILE_NAME}"
+            aws iam create-instance-profile --instance-profile-name "${INSTANCE_PROFILE_NAME}"
+            aws iam add-role-to-instance-profile \
+              --instance-profile-name "${INSTANCE_PROFILE_NAME}" \
+              --role-name "${ROLE_NAME}"
+          else
+            echo "Instance profile already exists: ${INSTANCE_PROFILE_NAME}"
+          fi
+
+      # --- Launch EC2 instance (if none exist) ---
       - name: Launch EC2 instance
         id: launch
         run: |
           INSTANCE_ID=$(aws ec2 describe-instances \
             --filters "Name=tag:Name,Values=${INSTANCE_NAME}" "Name=instance-state-name,Values=running,pending,stopped,stopping" \
             --query "Reservations[*].Instances[*].InstanceId" --output text)
-          
+
           if [ -n "$INSTANCE_ID" ]; then
             echo "Existing instance found: $INSTANCE_ID"
             echo "Terminating existing instance..."
@@ -79,7 +134,7 @@ jobs:
             aws ec2 wait instance-terminated --instance-ids "$INSTANCE_ID"
             echo "Instance $INSTANCE_ID terminated."
           fi
-          
+
           echo "Creating new EC2 instance..."
           INSTANCE_ID=$(aws ec2 run-instances \
             --image-id ami-0cfde0ea8edd312d4 \
@@ -87,10 +142,11 @@ jobs:
             --instance-type t3.micro \
             --key-name "${KEY_NAME}" \
             --user-data file://setup_be.sh \
+            --iam-instance-profile Name="${INSTANCE_PROFILE_NAME}" \
             --security-groups "${SECURITY_GROUP}" \
             --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${INSTANCE_NAME}}]" \
             --query "Instances[0].InstanceId" --output text)
-          
+
           echo "New instance created: $INSTANCE_ID"
           echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
 
