@@ -81,10 +81,23 @@ jobs:
 
           aws iam put-role-policy \
             --role-name "${ROLE_NAME}" \
-            --policy-name "ParameterStoreAccess" \
+            --policy-name "ParameterStoreAndSSMAccess" \
             --policy-document '{
               "Version": "2012-10-17",
-              "Statement": [{"Effect": "Allow","Action": ["ssm:GetParameter","ssm:GetParameters","ssm:GetParametersByPath"],"Resource": "*"}]
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "ssm:GetParameter",
+                    "ssm:GetParameters",
+                    "ssm:GetParametersByPath",
+                    "ssm:UpdateInstanceInformation",
+                    "ssmmessages:*",
+                    "ec2messages:*"
+                  ],
+                  "Resource": "*"
+                }
+              ]
             }'
 
           if ! aws iam get-instance-profile --instance-profile-name "${INSTANCE_PROFILE_NAME}" >/dev/null 2>&1; then
