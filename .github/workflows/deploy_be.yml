@@ -15,6 +15,7 @@ env:
   IMAGE_NAME: viriyadhika/disaster-classification-mscac:latest
   SECURITY_GROUP: disaster-classify-sg
   KEY_NAME: disaster-keypair
+  ROLE_NAME: EC2ParameterStoreAccessRole
 
 jobs:
   deploy:
