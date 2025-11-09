@@ -46,12 +46,17 @@ type RecentTweet = {
 // ============================================================================
 // API HOOKS
 // ============================================================================
-function usePredictTweet() {
+function usePredictTweet(onSettled: () => void) {
   return useMutation<PredictionOutput, AxiosError, TweetInput>({
     mutationKey: ["predict-tweet"],
     mutationFn: async (input: TweetInput) => {
       const response = await axios.post<PredictionOutput>(`${API_URL}/predict-tweet`, input)
       return response.data
+    },
+    onSettled: async () => {
+      // Wait for DB to save the new data
+      await new Promise((res) => setTimeout(() => {res(0)}, 500))
+      onSettled()
     }
   })
 }
@@ -93,7 +98,7 @@ function useRecentTweets(timeRange: TimeRange) {
       })
       return res.data
     },
-    refetchInterval: 1000,
+    refetchInterval: 5000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
   })
@@ -109,15 +114,8 @@ function CombinedDashboard() {
   const [filter, setFilter] = useState<"all" | "emergency" | "safe">("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [timeRange, setTimeRange] = useState<TimeRange>("1day")
-  const { mutate, data: predictionData, isPending } = usePredictTweet()
   const { data: recentTweets, isLoading, refetch } = useRecentTweets(timeRange)
-
-  // Clear input after successful prediction
-  useEffect(() => {
-    if (predictionData) {
-      setTweet("")
-    }
-  }, [predictionData])
+  const { mutate, data: predictionData, isPending, reset } = usePredictTweet(refetch)
 
   // Calculate statistics
   const stats = {
@@ -189,7 +187,7 @@ function CombinedDashboard() {
               <div className="flex gap-3">
                 <Textarea
                   value={tweet}
-                  onChange={(e) => setTweet(e.target.value)}
+                  onChange={(e) => {setTweet(e.target.value); reset();}}
                   placeholder="e.g., 'Building on fire at Main Street, people evacuating...'"
                   className="flex-1 min-h-[80px] resize-none border-2 focus:border-blue-500 transition-colors"
                   maxLength={280}
@@ -216,7 +214,7 @@ function CombinedDashboard() {
             </div>
 
             {/* Result Display */}
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 pt-8">
               {predictionData ? (
                 <div className={`p-4 rounded-lg border-2 ${
                   predictionData.is_real_disaster 
@@ -267,7 +265,7 @@ function CombinedDashboard() {
       <main className="max-w-7xl mx-auto px-6 py-8">
         {/* Live Feed Section */}
         <Card className="bg-white/90 backdrop-blur-sm border-2 shadow-xl">
-          <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white">
+          <CardHeader className="bg-gradient-to-r pt-4 from-indigo-500 to-purple-500 text-white">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="relative">
@@ -287,7 +285,7 @@ function CombinedDashboard() {
                 Refresh
               </Button>
             </div>
-            <p className="text-indigo-100 text-sm mt-2">
+            <p className="text-indigo-100 pb-2 text-sm mt-2">
               Real-time classified tweets • Auto-refresh: 60s
             </p>
           </CardHeader>
