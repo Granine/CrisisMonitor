@@ -27,15 +27,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col items-center p-6`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col items-center`}
       >
-        {/* Navigation Bar */}
-        <nav className="flex items-center justify-between w-full max-w-3xl mb-4">
-          <h1 className="text-3xl font-bold">CrisisMonitor</h1>
-        </nav>
-
-        {/* Page Content */}
-        <main className="w-full max-w-3xl">{children}</main>
+        <main className="w-full">{children}</main>
       </body>
     </html>
   )
