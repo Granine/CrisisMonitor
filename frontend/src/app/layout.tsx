@@ -31,7 +31,7 @@ export default function RootLayout({
       >
         {/* Navigation Bar */}
         <nav className="flex items-center justify-between w-full max-w-3xl mb-4">
-          <h1 className="text-3xl font-bold">Crisis Monitor 🐤</h1>
+          <h1 className="text-3xl font-bold">CrisisMonitor 🐤</h1>
           <div className="flex gap-3">
             <Link href="/" passHref>
               <Button variant="outline">Home</Button>
