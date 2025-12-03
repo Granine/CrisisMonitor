@@ -146,7 +146,7 @@ function CombinedDashboard() {
               <div>
                 <div className="flex items-center gap-3 mb-2">
                   <Shield className="h-8 w-8" />
-                  <h1 className="text-3xl font-bold">Crisis Monitor AI</h1>
+                  <h1 className="text-3xl font-bold">#Hurricane</h1>
                 </div>
                 <p className="text-sm text-blue-100">
                   Real-time emergency detection powered by advanced machine learning
