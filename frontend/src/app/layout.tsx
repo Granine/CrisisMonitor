@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "CrisisMonitor",
+  title: "#Hurricane",
   description: "Monitor crisis one tweet at a time",
 }
 
